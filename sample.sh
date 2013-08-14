@@ -8,7 +8,9 @@ respond () {
   content_type "text/html"
 
   send_response "
-<p>Hello, world! You requested http://$(header "Host")${_PATH}.</p>
+<meta charset='utf-8'>
+<p>Hello, world! You requested http://$(header "Host")${_PATH}?${_QSTR}.</p>
+<p>$(query_arg "code")</p>
 <p>Try going to a <a href='/$(randomstr)'>random</a> location!</p>
 "
 }

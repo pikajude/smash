@@ -39,11 +39,64 @@ hecho () {
   echo -ne "\r\n"
 }
 
+set_req_path () {
+  path="$1"
+  _PATH="${path%\?*}"
+  _QSTR="${path#*\?}"
+  if [[ -n "$_QSTR" ]]; then
+    parse_qstr
+  fi
+}
+
+parse_qstr () {
+  _QUERY_ARGS=()
+  args=(${_QSTR//&/ })
+  for i in "${args[@]}"; do
+    key="${i%%=*}"
+    if [[ -z "$key" ]]; then
+      continue
+    fi
+    val=$(cgi_unescape "${i#*=}")
+    _QUERY_ARGS+=($key)
+    _QUERY_ARGS+=("$val")
+  done
+}
+
+cgi_unescape () {
+  str="$1"
+  len="${#str}"
+  out=
+  if ! echo "$str" | grep -q '%'; then
+    echo -n "$str"
+  else
+    for (( i = 0; i < ${len}; i++ )); do
+      ch="${str:$i:1}"
+      if [[ "$ch" == "%" ]]; then
+        out="${out}$(echo -e "\\x${str:$(expr $i + 1):2}")"
+        i="$(expr $i + 2)"
+      else
+        out="${out}$ch"
+      fi
+    done
+    echo -n "$out"
+  fi
+}
+
+query_arg () {
+  arg="$1"
+  len=${#_QUERY_ARGS[@]}
+  for (( i = 0; i < ${len}; i += 2 )); do
+    if [[ "${_QUERY_ARGS[$i]}" == "$arg" ]]; then
+      echo "${_QUERY_ARGS[$(expr $i + 1)]}"
+    fi
+  done
+}
+
 parse_headers () {
   read header
   IFS=' ' read -ra REQ <<< "$header"
   _METHOD="${REQ[0]}"
-  _PATH="${REQ[1]}"
+  set_req_path "${REQ[1]}"
   _VERSION="${REQ[2]#HTTP/}"
   _VERSION="${_VERSION:0:3}"
   _HEADERS=()
@@ -104,7 +157,7 @@ send_headers () {
 }
 
 send_response () {
-  resp="$(echo "$1" | perl -pne 's/$/\r/')"
+  resp="$(echo "$1" | sed $(echo -e "s/\$/\r/"))"
   send_headers "$resp"
   hecho "$resp"
   echo "[$(date)] \"${_METHOD} ${_PATH} HTTP/${_VERSION}\" ${STATUS_CODE} ${#resp} \"http://$(header "Host")$_PATH\" \"$(header "User-Agent")\"" >>$LOGFILE
