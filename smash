@@ -1,0 +1,169 @@
+#!/bin/bash
+
+if ! hash netcat 2>/dev/null; then
+  echo >&2 "netcat not found; you need netcat >= 0.7.1 to smash."
+  exit 1
+fi
+
+INTERRUPTED=0
+CONTENT_TYPE="text/html"
+STATUS_CODE=200
+DIR=$(dirname $0)
+LOGFILE="$DIR/log.txt"
+
+LISTEN_PORT=4445
+
+trap 'INTERRUPTED=1' INT
+
+launch () {
+  while [[ "$INTERRUPTED" != "1" ]]; do
+    if ! netcat -l -p $LISTEN_PORT -e "$0 magic"; then
+      if [[ "$INTERRUPTED" == "1" ]]; then
+        echo "goodbye!"
+        exit 0
+      else
+        echo >&2 "smash exited with a nonzero status: $? (possibly an internal server error)"
+        exit 1
+      fi
+    fi
+  done
+}
+
+hecho () {
+  echo -n "$@"
+  echo -ne "\r\n"
+}
+
+parse_headers () {
+  read header
+  IFS=' ' read -ra REQ <<< "$header"
+  _METHOD="${REQ[0]}"
+  _PATH="${REQ[1]}"
+  _VERSION="${REQ[2]#HTTP/}"
+  _VERSION="${_VERSION:0:3}"
+  _HEADERS=()
+  while true; do
+    read header
+    if [[ "${#header}" == "1" ]]; then
+      break
+    fi
+    len=$(expr "${#header}" - 1)
+    header=${header:0:$len}
+    echo "Received header: $header" >> headers.txt
+    _HEADERS+=("$header")
+  done
+}
+
+header () {
+  key="$1"
+  for v in "${_HEADERS[@]}"; do
+    if echo "$v" | grep -q "^${key}: "; then
+      echo "${v#${key}: }"
+      break
+    fi
+  done
+}
+
+status_to_text () {
+  case $STATUS_CODE in
+    200)
+      echo -n "OK"
+      ;;
+    404)
+      echo -n "Not Found"
+      ;;
+    500)
+      echo -n "Internal Server Error"
+      ;;
+    *)
+      echo >&2 "Unhandled status code $STATUS_CODE"
+      exit 1
+      ;;
+  esac
+}
+
+content_type () {
+  CONTENT_TYPE=$1
+}
+
+status_code () {
+  STATUS_CODE=$1
+}
+
+send_headers () {
+  resp="$1"
+  hecho "HTTP/1.1 $STATUS_CODE $(status_to_text)"
+  hecho "Date: $(date)"
+  hecho "Content-Type: $CONTENT_TYPE"
+  hecho "Content-Length: ${#resp}"
+  hecho ""
+}
+
+send_response () {
+  resp="$(echo "$1" | perl -pne 's/$/\r/')"
+  send_headers "$resp"
+  hecho "$resp"
+  echo "[$(date)] \"${_METHOD} ${_PATH} HTTP/${_VERSION}\" ${STATUS_CODE} ${#resp} \"http://$(header "Host")$_PATH\" \"$(header "User-Agent")\"" >>$LOGFILE
+  exit 0
+}
+
+send_response_eval () {
+  resp="$(echo -e "$1")"
+  send_response "$resp"
+}
+
+
+## userspace functions
+
+display_dir () {
+  dir="$1"
+  resp="<html><head><title>Index of ${dir#$DIR}</title></head><body><h1>"
+  resp="${resp}Index of ${dir#$DIR}</h1><pre>"
+  while IFS= read -d $'\0' -r f ; do
+    file=$(echo "$f" | cut -c4-)
+    if [[ -z "$file" ]]; then
+      continue
+    fi
+    fil=$(file "$file")
+    usec=$(stat -f '%B' "$file")
+    utime=$(date -r "$usec" +"%d-%b-%Y %H:%M")
+    size=$(wc -c "$file" | awk '{print $1}')
+    resp="${resp}${utime}\t$size\t<a href='/$file'>$file</a>${fil#$file}\n"
+  done < <(find "$dir" \( ! -regex '.*/\..*' \) -print0)
+  resp="${resp}</pre></body></html>"
+  send_response_eval "$resp"
+}
+
+display_file () {
+  file="$1"
+  mt="$(file --mime-type "$file")"
+  mt="${mt#$file: }"
+  content_type "$mt"
+  send_response "$(<$file)"
+}
+
+respond () {
+  resp="<html><head><title>Hello world!</title></head><body>"
+  if test -d "${DIR}${_PATH}"; then
+    display_dir "${DIR}${_PATH}"
+  elif test -f "${DIR}${_PATH}"; then
+    display_file "${DIR}${_PATH}"
+  else
+    status_code 404
+    send_response_eval "<html><head><title>Hello world!</title></head><body>Hi! You requested <code>$_PATH</code>, which doesn't seem to exist. Sorry!</body></html>"
+  fi
+}
+
+
+## readloop
+
+if [[ "$1" == "magic" ]]; then
+  parse_headers
+
+  status_code 200
+
+  respond
+else
+  echo "launching smash"
+  launch
+fi
