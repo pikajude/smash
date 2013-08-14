@@ -5,8 +5,13 @@ if ! hash netcat 2>/dev/null; then
   exit 1
 fi
 
+if (( $# < 1 )); then
+  echo >&2 "Usage: $0 client_file.sh"
+  exit 1
+fi
+
 INTERRUPTED=0
-CONTENT_TYPE="text/html"
+CONTENT_TYPE="text/plain"
 STATUS_CODE=200
 DIR=$(dirname $0)
 LOGFILE="$DIR/log.txt"
@@ -17,7 +22,7 @@ trap 'INTERRUPTED=1' INT
 
 launch () {
   while [[ "$INTERRUPTED" != "1" ]]; do
-    if ! netcat -l -p $LISTEN_PORT -e "$0 magic"; then
+    if ! netcat -l -p $LISTEN_PORT -e "$0 __magic__ $1"; then
       if [[ "$INTERRUPTED" == "1" ]]; then
         echo "goodbye!"
         exit 0
@@ -112,52 +117,11 @@ send_response_eval () {
   send_response "$resp"
 }
 
-
-## userspace functions
-
-display_dir () {
-  dir="$1"
-  resp="<html><head><title>Index of ${dir#$DIR}</title></head><body><h1>"
-  resp="${resp}Index of ${dir#$DIR}</h1><pre>"
-  while IFS= read -d $'\0' -r f ; do
-    file=$(echo "$f" | cut -c4-)
-    if [[ -z "$file" ]]; then
-      continue
-    fi
-    fil=$(file "$file")
-    usec=$(stat -f '%B' "$file")
-    utime=$(date -r "$usec" +"%d-%b-%Y %H:%M")
-    size=$(wc -c "$file" | awk '{print $1}')
-    resp="${resp}${utime}\t$size\t<a href='/$file'>$file</a>${fil#$file}\n"
-  done < <(find "$dir" \( ! -regex '.*/\..*' \) -print0)
-  resp="${resp}</pre></body></html>"
-  send_response_eval "$resp"
-}
-
-display_file () {
-  file="$1"
-  mt="$(file --mime-type "$file")"
-  mt="${mt#$file: }"
-  content_type "$mt"
-  send_response "$(<$file)"
-}
-
-respond () {
-  resp="<html><head><title>Hello world!</title></head><body>"
-  if test -d "${DIR}${_PATH}"; then
-    display_dir "${DIR}${_PATH}"
-  elif test -f "${DIR}${_PATH}"; then
-    display_file "${DIR}${_PATH}"
-  else
-    status_code 404
-    send_response_eval "<html><head><title>Hello world!</title></head><body>Hi! You requested <code>$_PATH</code>, which doesn't seem to exist. Sorry!</body></html>"
-  fi
-}
-
-
 ## readloop
 
-if [[ "$1" == "magic" ]]; then
+if [[ "$1" == "__magic__" ]]; then
+  source "$2"
+
   parse_headers
 
   status_code 200
@@ -165,5 +129,5 @@ if [[ "$1" == "magic" ]]; then
   respond
 else
   echo "launching smash"
-  launch
+  launch $@
 fi
