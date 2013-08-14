@@ -1,7 +1,7 @@
 #!/bin/bash
 
 randomstr () {
-  head -1 /dev/random | base64 | cut -c1-10
+  head -1 /dev/urandom | base64 | cut -c1-10 | head -1
 }
 
 respond () {
