@@ -54,7 +54,6 @@ parse_headers () {
     fi
     len=$(expr "${#header}" - 1)
     header=${header:0:$len}
-    echo "Received header: $header" >> headers.txt
     _HEADERS+=("$header")
   done
 }
