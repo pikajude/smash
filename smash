@@ -11,8 +11,8 @@ if (( $# < 1 )); then
 fi
 
 INTERRUPTED=0
-CONTENT_TYPE="text/plain"
-STATUS_CODE=200
+CONTENT_TYPE=
+STATUS_CODE=
 DIR=$(dirname $0)
 LOGFILE="$DIR/log.txt"
 
@@ -124,6 +124,7 @@ if [[ "$1" == "__magic__" ]]; then
 
   parse_headers
 
+  content_type "text/plain"
   status_code 200
 
   respond
