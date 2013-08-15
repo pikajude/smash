@@ -154,10 +154,11 @@ status_code () {
 
 send_headers () {
   resp="$1"
+  len="$(echo "$resp" | wc -c | tr -d ' ')"
   hecho "HTTP/1.1 $STATUS_CODE $(status_to_text)"
   hecho "Date: $(date)"
   hecho "Content-Type: $CONTENT_TYPE"
-  hecho "Content-Length: ${#resp}"
+  hecho "Content-Length: $len"
   hecho ""
 }
 
