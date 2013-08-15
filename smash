@@ -72,8 +72,13 @@ cgi_unescape () {
     for (( i = 0; i < ${len}; i++ )); do
       ch="${str:$i:1}"
       if [[ "$ch" == "%" ]]; then
-        out="${out}$(echo -e "\\x${str:$(expr $i + 1):2}")"
-        i="$(expr $i + 2)"
+        unescaped="$(echo -ne "\\x${str:$(expr $i + 1):2}")"
+        if [[ "${#unescaped}" == "4" ]]; then
+          out="${out}$ch"
+        else
+          out="${out}${unescaped}"
+          i="$(expr $i + 2)"
+        fi
       else
         out="${out}$ch"
       fi
@@ -157,7 +162,12 @@ send_headers () {
 }
 
 send_response () {
-  resp="$(echo "$1" | sed $(echo -e "s/\$/\r/"))"
+  resp="$(echo "$1" | sed $(echo -e "s/\$/\r/") 2>err.txt)"
+  if (( $? != 0 )); then
+    status_code 500
+    resp="<h1>Internal Server Error</h1><p>$(<err.txt)</p>"
+  fi
+  rm -f err.txt
   send_headers "$resp"
   hecho "$resp"
   echo "[$(date)] \"${_METHOD} ${_PATH} HTTP/${_VERSION}\" ${STATUS_CODE} ${#resp} \"http://$(header "Host")$_PATH\" \"$(header "User-Agent")\"" >>$LOGFILE
