@@ -42,7 +42,10 @@ hecho () {
 set_req_path () {
   path="$1"
   _PATH="${path%\?*}"
-  _QSTR="${path#*\?}"
+  _QSTR="${path#$_PATH}"
+  if [[ "${_QSTR:0:1}" == "?" ]]; then
+    _QSTR="${_QSTR:1}"
+  fi
   if [[ -n "$_QSTR" ]]; then
     parse_qstr
   fi
@@ -60,6 +63,45 @@ parse_qstr () {
     _QUERY_ARGS+=($key)
     _QUERY_ARGS+=("$val")
   done
+}
+
+binarify () {
+  s="$1"
+  bits=($(echo -n "$s" | hexdump -e '16/1 "%02u "'))
+  case "${#bits[@]}" in
+    1) case "${bits[0]}" in
+         34) echo -n "&quot;" ;;
+         38) echo -n "&amp;" ;;
+         39) echo -n "&apos;" ;;
+         60) echo -n "&lt;" ;;
+         62) echo -n "&gt;" ;;
+         *) echo -n "$s" ;;
+       esac
+       ;;
+    2)
+      let "res = ((${bits[0]} & 31) << 6) + (${bits[1]} & 63)"
+      echo -n "&#$res;"
+      ;;
+    3)
+      let "res = ((${bits[0]} & 15) << 12) + ((${bits[1]} & 63) << 6) + (${bits[2]} & 63)"
+      echo -n "&#$res;"
+      ;;
+    4)
+      let "res = ((${bits[0]} & 7) << 18) + ((${bits[1]} & 63) << 12) + ((${bits[2]} & 63) << 6) + (${bits[3]} & 63)"
+      echo -n "&#$res;"
+      ;;
+  esac
+}
+
+html_encode () {
+  str="$1"
+  len="${#str}"
+  out=
+  for (( i = 0; i < ${len}; i++ )); do
+    ch="${str:$i:1}"
+    out="${out}$(binarify "$ch")"
+  done
+  echo -n "$out"
 }
 
 cgi_unescape () {
