@@ -59,7 +59,7 @@ parse_qstr () {
     if [[ -z "$key" ]]; then
       continue
     fi
-    val=$(cgi_unescape "${i#*=}")
+    val="$(cgi_unescape "${i#*=}")"
     _QUERY_ARGS+=($key)
     _QUERY_ARGS+=("$val")
   done
